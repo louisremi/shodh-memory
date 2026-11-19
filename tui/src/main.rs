@@ -743,6 +743,16 @@ async fn main() -> Result<()> {
     let api_key = std::env::var("SHODH_API_KEY")
         .unwrap_or_else(|_| "sk-shodh-dev-local-testing-key".to_string());
 
+    // A launcher that already knows which profile to open can name it here and
+    // skip the interactive selector for the first pick. Switching profile from
+    // inside the TUI still goes through the selector, and a value the server
+    // does not list is ignored, so a stale setting cannot open an empty
+    // dashboard.
+    let mut configured_user: Option<String> = std::env::var("SHODH_USER_ID")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
     // Initialize terminal for splash and user selector
     // Note: Mouse capture disabled to allow native terminal text selection/copy
     enable_raw_mode()?;
@@ -752,21 +762,37 @@ async fn main() -> Result<()> {
     // Show splash screen
     run_splash(&mut terminal).await?;
 
+    // Honour the configured profile only if the server knows it. An unreachable
+    // server keeps it, so the failure surfaces from run_tui rather than being
+    // silently reported as a missing profile.
+    if let Some(id) = configured_user.take() {
+        let known = fetch_users(&base_url, &api_key)
+            .await
+            .map(|users| users.iter().any(|candidate| *candidate == id))
+            .unwrap_or(true);
+        if known {
+            configured_user = Some(id);
+        }
+    }
+
     let mut show_splash = false;
     loop {
         // Run user selector (skip splash on switch-user re-entry)
         if show_splash {
             // Terminal already in alternate screen from previous run_tui cleanup
         }
-        let user = match run_user_selector(&mut terminal, &base_url, &api_key).await? {
-            Some(u) => u,
-            None => {
-                // Clean up terminal before exit
-                disable_raw_mode()?;
-                execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-                terminal.show_cursor()?;
-                return Ok(());
-            }
+        let user = match configured_user.take() {
+            Some(id) => id,
+            None => match run_user_selector(&mut terminal, &base_url, &api_key).await? {
+                Some(u) => u,
+                None => {
+                    // Clean up terminal before exit
+                    disable_raw_mode()?;
+                    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+                    terminal.show_cursor()?;
+                    return Ok(());
+                }
+            },
         };
 
         // Clean up terminal - run_tui will create its own session
