@@ -73,6 +73,11 @@ shodh doctor        # Diagnose issues
 
 One binary, all functionality. No Docker, no API keys, no external dependencies.
 
+`shodh tui` opens on a profile picker. Set `SHODH_USER_ID` to open straight into
+that profile, which is what launchers and editor integrations want; an id the
+server does not list falls back to the picker, and switching profile inside the
+TUI works as before.
+
 ### Claude Code
 
 ```bash
